@@ -10,4 +10,4 @@ Unauthorized copying, modification, or redistribution
 of this software is strictly prohibited.
 
 For commercial licensing or permission requests,
-contact: <your email>
+contact: ravichand2309@gmail.com

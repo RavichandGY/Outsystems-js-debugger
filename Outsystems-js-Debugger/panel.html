@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="lib/codemirror.css">
+  <link rel="stylesheet" href="lib/foldgutter.css">
+
+  <style>
+    body {
+      margin: 0;
+      font-family: monospace;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #layout {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      height: 100vh;
+    }
+
+    #list {
+      border-right: 1px solid #ccc;
+      overflow-y: auto;
+    }
+
+    .row {
+      padding: 10px;
+      font-weight: bold;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+    }
+
+    .row:hover {
+      background: #f0f0f0;
+    }
+
+    .row.active {
+      background: #e6f0ff;
+      color: #0b5fff;
+      border-left: 4px solid #0b5fff;
+    }
+
+    .row.active:hover {
+      background: #dbe9ff;
+    }
+
+    #right {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    #toolbar {
+      padding: 6px;
+      border-bottom: 1px solid #ccc;
+      background: #fafafa;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    #editor {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .CodeMirror {
+      height: 100% !important;
+    }
+
+    #status {
+      margin-left: 10px;
+      font-weight: bold;
+    }
+
+    input[type="text"] {
+      padding: 2px 6px;
+      width: 160px;
+    }
+    
+    #advancedControls {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="layout">
+    <!-- LEFT PANEL -->
+    <div id="list">
+      <div class="row" data-type="OnInitialize">OnInitialize</div>
+      <div class="row" data-type="OnReady">OnReady</div>
+      <div class="row" data-type="OnRender">OnRender</div>
+      <div class="row" data-type="Others">Others</div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div id="right">
+      <div id="toolbar">
+        <button id="run">▶ Run</button>
+        <button id="debug">🐞 Debug</button>
+        <button id="reset">↩ Reset</button>
+
+        <div id="advancedControls">
+          <label>
+            <input type="checkbox" id="pauseOnRun">
+            Pause on run
+          </label>
+
+          <input type="text" id="search" placeholder="Search JS…" />
+          <button id="prev">⏮</button>
+          <button id="next">⏭</button>
+        </div>
+
+
+        <span id="status"></span>
+      </div>
+
+      <div id="editor"></div>
+    </div>
+  </div>
+
+  <!-- CodeMirror core -->
+  <script src="lib/codemirror.js"></script>
+
+  <!-- Language -->
+  <script src="lib/javascript.js"></script>
+
+  <!-- 🔍 Search -->
+  <script src="lib/searchcursor.js"></script>
+
+  <!-- 📂 Folding -->
+  <script src="lib/foldcode.js"></script>
+  <script src="lib/foldgutter.js"></script>
+  <script src="lib/brace-fold.js"></script>
+
+  <script src="panel.js"></script>
+</body>
+</html>

@@ -1,136 +1,197 @@
 /*!
- * OutSystems JS Debugger
+ * OutSystems JS Debugger – Page Hook
  * Copyright (c) 2025 RavichandGY
  * All rights reserved.
- *
- * This software is proprietary and confidential.
- * Unauthorized copying, modification, or distribution
- * is strictly prohibited.
  */
 
 (function () {
   if (window.__OS_DEBUGGER__) return;
 
-  /* =========================================================
-     Debugger API
-  ========================================================= */
+  /* =====================================================
+     PLATFORM MODULE PREFIXES (FILTER OUT)
+  ===================================================== */
+  const PLATFORM_PREFIXES = [
+    "OutSystemsUI",
+    "OutSystemsReact",
+    "System",
+    "Users",
+    "ServiceCenter"
+  ];
+
+  let APP_PREFIX = null;
+
+  /* =====================================================
+     DEBUG STORE (PAGE CONTEXT)
+  ===================================================== */
   window.__OS_DEBUGGER__ = {
     snippets: [],
+    seen: new Set(),
 
     add(snippet) {
+      const key = snippet.module + "::" + snippet.code;
+      if (this.seen.has(key)) return;
+      this.seen.add(key);
       this.snippets.push(snippet);
-      window.postMessage(
-        { source: "OS_DEBUGGER", action: "snippet", payload: snippet },
-        "*"
-      );
     },
 
     getAll() {
       return this.snippets;
-    },
-
-    /* ---------------------------------------------------------
-       Patch event handler so debugger pauses on REAL execution
-    --------------------------------------------------------- */
-    patchEvent(actionName) {
-      try {
-        const fn = window[actionName];
-        if (typeof fn === "function") {
-          if (fn.__patched) return true;
-
-          window[actionName] = function () {
-            debugger;
-            return fn.apply(this, arguments);
-          };
-
-          window[actionName].__patched = true;
-          return true;
-        }
-      } catch (e) {}
-      return false;
     }
   };
 
-  /* =========================================================
-     Breadcrumb parser
-  ========================================================= */
-  function parseBreadcrumb(moduleName) {
-    const parts = moduleName.split(".");
-    return {
-      app: parts[0] || "",
-      module: parts[1] || "",
-      flow: parts[2] || "",
-      screen: parts[3] || "",
-      action: parts.find(p => p.startsWith("On")) || ""
-    };
+  /* =====================================================
+     DETECT APP PREFIX (FIRST NON-PLATFORM MODULE)
+  ===================================================== */
+  function detectAppPrefix(moduleName) {
+    if (APP_PREFIX) return APP_PREFIX;
+    if (!moduleName) return null;
+
+    const prefix = moduleName.split(".")[0];
+    if (PLATFORM_PREFIXES.includes(prefix)) return null;
+
+    APP_PREFIX = prefix;
+    return APP_PREFIX;
   }
 
-  /* =========================================================
-     Extract developer JS from factory
-  ========================================================= */
-  function extractFromFactory(name, factory) {
-    try {
-      if (
-        typeof name !== "string" ||
-        !name.includes(".JavaScript") ||
-        typeof factory !== "function"
-      ) return;
+  /* =====================================================
+     CLEAN OUTSYSTEMS WRAPPERS
+  ===================================================== */
+  function normalizeBody(body) {
+    if (!body) return "";
 
-      let lifecycle = "Others";
-      if (name.includes(".OnInitialize.")) lifecycle = "OnInitialize";
-      else if (name.includes(".OnReady.")) lifecycle = "OnReady";
-      else if (name.includes(".OnRender.")) lifecycle = "OnRender";
-      else if (name.includes(".OnClick.")) lifecycle = "OnClick";
+    // Remove Promise wrapper
+    body = body.replace(
+      /return\s+new\s+Promise\s*\(\s*function\s*\([^)]*\)\s*{([\s\S]*?)}\s*\)\s*;?/,
+      "$1"
+    );
+
+    // Extract IIFE body if present
+    const iifeMatch = body.match(
+      /\(\s*function\s*\(\)\s*{([\s\S]*?)}\s*\)\s*\(\s*\)\s*;?/m
+    );
+    if (iifeMatch && iifeMatch[1]) {
+      body = iifeMatch[1];
+    }
+
+    // Remove trailing OutSystems closure
+    body = body.replace(/\}\s*;\s*$/, "");
+
+    return body.trim();
+  }
+
+  /* =====================================================
+     BEST-POSSIBLE SOURCE URL RESOLUTION
+  ===================================================== */
+  function resolveSourceUrl() {
+    try {
+      throw new Error();
+    } catch (e) {
+      const stackLine = (e.stack || "")
+        .split("\n")
+        .find(l => l.includes(".js:"));
+      if (!stackLine) return null;
+
+      const match = stackLine.match(/(https?:\/\/.*\.js):\d+:\d+/);
+      return match ? match[1] : null;
+    }
+  }
+
+  /* =====================================================
+     EXTRACT DEVELOPER JS WIDGETS
+  ===================================================== */
+  function extract(name, factory) {
+    try {
+      if (typeof name !== "string") return;
+      if (typeof factory !== "function") return;
+
+      // JS widgets always end with JS
+      if (!name.endsWith("JS")) return;
+
+      const app = detectAppPrefix(name);
+      if (!app || !name.startsWith(app + ".")) return;
+
+      const isScreenJS = name.includes(".mvc$controller.");
+      const isGlobalJS = name.includes(".controller$");
+      if (!isScreenJS && !isGlobalJS) return;
 
       const src = factory.toString();
 
-      const match = src.match(
-        /return\s+function\s*\([^)]*\)\s*{([\s\S]*?)}\s*;?\s*}$/m
+      // Extract return function body
+      const fnMatch = src.match(
+        /return\s+function\s*\([^)]*\)\s*{([\s\S]*?)}\s*;?\s*$/
       );
+      if (!fnMatch || !fnMatch[1]) return;
 
-      if (!match || !match[1]) return;
+      const cleanedCode = normalizeBody(fnMatch[1]);
+      if (cleanedCode.length < 20) return;
 
-      const breadcrumb = parseBreadcrumb(name);
+      // Screen detection
+      let screen = null;
+      if (isScreenJS) {
+        const parts = name.split(".");
+        screen = parts[2] || null;
+      }
 
       window.__OS_DEBUGGER__.add({
-        lifecycle,
         module: name,
-        actionName: breadcrumb.action,
-        breadcrumb,
-        code: match[1].trim(),
-        timestamp: Date.now()
+        screen,
+        code: cleanedCode,
+        originalCode: cleanedCode,
+        searchKey: `define("${name}"`,
+        sourceUrl: resolveSourceUrl()
       });
-    } catch (e) {}
+    } catch {
+      /* silent */
+    }
   }
 
-  /* =========================================================
-     Hook future define()
-  ========================================================= */
-  if (typeof window.define === "function") {
-    const originalDefine = window.define;
+  /* =====================================================
+     HOOK REQUIREJS (SAFE GUARDED)
+  ===================================================== */
+  function hookRequireJS() {
+    if (!window.requirejs) return false;
+    if (!requirejs.s || !requirejs.s.contexts) return false;
 
-    window.define = function (name, deps, factory) {
-      extractFromFactory(name, factory);
-      return originalDefine.apply(this, arguments);
+    const ctx = requirejs.s.contexts._;
+    if (!ctx || !ctx.defQueue) return false;
+
+    if (ctx.defQueue.__OS_HOOKED__) return true;
+
+    const originalPush = ctx.defQueue.push;
+
+    ctx.defQueue.push = function (args) {
+      try {
+        extract(args[0], args[2]);
+      } catch {}
+      return originalPush.apply(this, arguments);
     };
-  }
 
-  /* =========================================================
-     Scan already-registered RequireJS modules
-  ========================================================= */
-  function scanExistingModules() {
-    if (!window.requirejs || !requirejs.s || !requirejs.s.contexts) return;
+    ctx.defQueue.__OS_HOOKED__ = true;
 
-    Object.values(requirejs.s.contexts).forEach(ctx => {
-      if (!ctx.defined) return;
+    // Process queued modules
+    ctx.defQueue.forEach(args => extract(args[0], args[2]));
 
-      Object.entries(ctx.defined).forEach(([name, mod]) => {
-        if (typeof mod === "function") {
-          extractFromFactory(name, mod);
-        }
-      });
+    // Process already defined modules
+    Object.entries(ctx.defined || {}).forEach(([name, mod]) => {
+      if (typeof mod === "function") {
+        extract(name, mod);
+      }
     });
+
+    return true;
   }
 
-  setTimeout(scanExistingModules, 0);
+  /* =====================================================
+     POLL UNTIL REQUIREJS IS READY
+  ===================================================== */
+  const timer = setInterval(() => {
+    try {
+      if (hookRequireJS()) {
+        clearInterval(timer);
+      }
+    } catch {
+      /* page still loading */
+    }
+  }, 50);
+
 })();

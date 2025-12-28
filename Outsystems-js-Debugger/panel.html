@@ -17,11 +17,15 @@
       display: grid;
       grid-template-columns: 200px 1fr;
       height: 100vh;
+      overflow: hidden; /* 🔴 REQUIRED */
     }
 
+    /* LEFT PANEL */
     #list {
       border-right: 1px solid #ccc;
       overflow-y: auto;
+      position: relative;
+      z-index: 100; /* 🔴 REQUIRED */
     }
 
     .row {
@@ -45,11 +49,15 @@
       background: #dbe9ff;
     }
 
+    /* RIGHT PANEL */
     #right {
       display: flex;
       flex-direction: column;
       height: 100%;
       min-height: 0;
+      position: relative;
+      z-index: 1; /* 🔴 REQUIRED */
+      overflow: hidden; /* 🔴 REQUIRED */
     }
 
     #toolbar {
@@ -60,15 +68,20 @@
       align-items: center;
       gap: 6px;
       flex-wrap: wrap;
+      flex-shrink: 0;
     }
 
     #editor {
       flex: 1;
       min-height: 0;
+      position: relative;
+      overflow: hidden; /* 🔴 REQUIRED */
     }
 
     .CodeMirror {
       height: 100% !important;
+      position: relative;
+      overflow: hidden; /* 🔴 REQUIRED */
     }
 
     #status {
@@ -80,15 +93,28 @@
       padding: 2px 6px;
       width: 160px;
     }
-    
+
+    /* Hide advanced controls for now */
     #advancedControls {
       display: none;
+    }
+
+    /* FOOTER */
+    #footer {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-top: 1px solid #ddd;
+      text-align: center;
+      color: #666;
+      background: #fafafa;
+      flex-shrink: 0;
     }
   </style>
 </head>
 
 <body>
   <div id="layout">
+
     <!-- LEFT PANEL -->
     <div id="list">
       <div class="row" data-type="OnInitialize">OnInitialize</div>
@@ -115,12 +141,16 @@
           <button id="next">⏭</button>
         </div>
 
-
         <span id="status"></span>
       </div>
 
       <div id="editor"></div>
+
+      <div id="footer">
+        © 2025 Ravichand GY · OutSystems JS Debugger · All rights reserved
+      </div>
     </div>
+
   </div>
 
   <!-- CodeMirror core -->
@@ -129,14 +159,12 @@
   <!-- Language -->
   <script src="lib/javascript.js"></script>
 
-  <!-- 🔍 Search -->
-  <script src="lib/searchcursor.js"></script>
-
-  <!-- 📂 Folding -->
+  <!-- Folding -->
   <script src="lib/foldcode.js"></script>
   <script src="lib/foldgutter.js"></script>
   <script src="lib/brace-fold.js"></script>
 
+  <!-- Panel logic -->
   <script src="panel.js"></script>
 </body>
 </html>

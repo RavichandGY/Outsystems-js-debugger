@@ -33,7 +33,7 @@ const resetBtn = document.getElementById("reset");
 ========================================================= */
 const editor = CodeMirror(document.getElementById("editor"), {
   value: "",
-  mode: "javascript",
+  mode: "javascript",   // 🔴 FORCE JS MODE
   lineNumbers: true,
   indentUnit: 2,
   tabSize: 2,
@@ -45,8 +45,6 @@ const editor = CodeMirror(document.getElementById("editor"), {
   foldGutter: true
 });
 
-let currentSnippet = null;
-let originalCode = "";
 
 /* =========================================================
    Pull existing snippets

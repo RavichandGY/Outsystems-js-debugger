@@ -17,15 +17,15 @@
       display: grid;
       grid-template-columns: 200px 1fr;
       height: 100vh;
-      overflow: hidden; /* 🔴 REQUIRED */
+      overflow: hidden;
     }
 
-    /* LEFT PANEL */
+    /* ================= LEFT PANEL ================= */
     #list {
       border-right: 1px solid #ccc;
       overflow-y: auto;
       position: relative;
-      z-index: 100; /* 🔴 REQUIRED */
+      z-index: 100;
     }
 
     .row {
@@ -49,17 +49,16 @@
       background: #dbe9ff;
     }
 
-    /* RIGHT PANEL */
+    /* ================= RIGHT PANEL ================= */
     #right {
       display: flex;
       flex-direction: column;
       height: 100%;
       min-height: 0;
-      position: relative;
-      z-index: 1; /* 🔴 REQUIRED */
-      overflow: hidden; /* 🔴 REQUIRED */
+      overflow: hidden;
     }
 
+    /* Toolbar */
     #toolbar {
       padding: 6px;
       border-bottom: 1px solid #ccc;
@@ -67,21 +66,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
-      flex-wrap: wrap;
       flex-shrink: 0;
-    }
-
-    #editor {
-      flex: 1;
-      min-height: 0;
-      position: relative;
-      overflow: hidden; /* 🔴 REQUIRED */
-    }
-
-    .CodeMirror {
-      height: 100% !important;
-      position: relative;
-      overflow: hidden; /* 🔴 REQUIRED */
     }
 
     #status {
@@ -89,17 +74,51 @@
       font-weight: bold;
     }
 
-    input[type="text"] {
-      padding: 2px 6px;
-      width: 160px;
+    /* ================= BREADCRUMB BAR ================= */
+    #breadcrumb-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #555;
+      border-bottom: 1px solid #ddd;
+      background: #fff;
+      flex-shrink: 0;
     }
 
-    /* Hide advanced controls for now */
-    #advancedControls {
-      display: none;
+    #breadcrumb {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    /* FOOTER */
+    #breadcrumb-action {
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #0b5fff;
+      user-select: none;
+    }
+
+    #breadcrumb-action:hover {
+      text-decoration: underline;
+    }
+
+    /* ================= EDITOR ================= */
+    #editor {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .CodeMirror {
+      height: 100% !important;
+    }
+
+    /* ================= FOOTER ================= */
     #footer {
       font-size: 11px;
       padding: 4px 8px;
@@ -109,49 +128,56 @@
       background: #fafafa;
       flex-shrink: 0;
     }
+
+    /* Error highlight */
+    .cm-error-line {
+      background: rgba(255, 0, 0, 0.15);
+    }
   </style>
 </head>
 
 <body>
   <div id="layout">
 
-    <!-- LEFT PANEL -->
+    <!-- ================= LEFT PANEL ================= -->
     <div id="list">
       <div class="row" data-type="OnInitialize">OnInitialize</div>
       <div class="row" data-type="OnReady">OnReady</div>
       <div class="row" data-type="OnRender">OnRender</div>
+      <div class="row" data-type="OnAfterFetch">OnAfterFetch</div>
       <div class="row" data-type="Others">Others</div>
     </div>
 
-    <!-- RIGHT PANEL -->
+    <!-- ================= RIGHT PANEL ================= -->
     <div id="right">
+
+      <!-- TOOLBAR -->
       <div id="toolbar">
         <button id="run">▶ Run</button>
-        <button id="debug">🐞 Debug</button>
         <button id="reset">↩ Reset</button>
-
-        <div id="advancedControls">
-          <label>
-            <input type="checkbox" id="pauseOnRun">
-            Pause on run
-          </label>
-
-          <input type="text" id="search" placeholder="Search JS…" />
-          <button id="prev">⏮</button>
-          <button id="next">⏭</button>
-        </div>
-
         <span id="status"></span>
       </div>
 
+      <!-- BREADCRUMB BAR -->
+      <div id="breadcrumb-bar">
+        <div id="breadcrumb"></div>
+        <div id="breadcrumb-action" title="Navigate to source file">
+          🔗 <span>Navigate to source file</span>
+        </div>
+      </div>
+
+      <!-- EDITOR -->
       <div id="editor"></div>
 
+      <!-- FOOTER -->
       <div id="footer">
         © 2025 Ravichand GY · OutSystems JS Debugger · All rights reserved
       </div>
     </div>
 
   </div>
+
+  <!-- ================= SCRIPTS ================= -->
 
   <!-- CodeMirror core -->
   <script src="lib/codemirror.js"></script>

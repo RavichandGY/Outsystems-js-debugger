@@ -2,163 +2,213 @@
  * OutSystems JS Debugger
  * Copyright (c) 2025 RavichandGY
  * All rights reserved.
- *
- * This software is proprietary and confidential.
- * Unauthorized copying, modification, or distribution
- * is strictly prohibited.
  */
 
-
-/* =========================================================
-   Lifecycle groups
-========================================================= */
+/* =====================================================
+   STATE
+===================================================== */
 const groups = {
   OnInitialize: [],
   OnReady: [],
   OnRender: [],
-  OnClick: [],
+  OnAfterFetch: [],
   Others: []
 };
 
-/* =========================================================
-   UI references
-========================================================= */
+let allSnippets = [];
+let currentScreen = null;
+let activeSnippet = null;
+
+/* =====================================================
+   UI ELEMENTS (MATCH HTML EXACTLY)
+===================================================== */
 const status = document.getElementById("status");
+const breadcrumbEl = document.getElementById("breadcrumb");
+const breadcrumbLink = document.getElementById("breadcrumb-action");
 const runBtn = document.getElementById("run");
-const debugBtn = document.getElementById("debug");
 const resetBtn = document.getElementById("reset");
 
-/* =========================================================
-   CodeMirror editor
-========================================================= */
+/* =====================================================
+   CODEMIRROR
+===================================================== */
 const editor = CodeMirror(document.getElementById("editor"), {
-  value: "",
-  mode: "javascript",   // 🔴 FORCE JS MODE
+  mode: "javascript",
   lineNumbers: true,
   indentUnit: 2,
-  tabSize: 2,
-  gutters: [
-    "CodeMirror-linenumbers",
-    "breakpoints",
-    "CodeMirror-foldgutter"
-  ],
-  foldGutter: true
+  tabSize: 2
 });
 
+/* =====================================================
+   HELPERS
+===================================================== */
+function classify(snippet) {
+  const n = snippet.module || "";
+  if (n.includes(".OnInitialize.")) return "OnInitialize";
+  if (n.includes(".OnReady.")) return "OnReady";
+  if (n.includes(".OnRender.")) return "OnRender";
+  if (n.includes("OnAfterFetch")) return "OnAfterFetch";
+  return "Others";
+}
 
-/* =========================================================
-   Pull existing snippets
-========================================================= */
+function activateTab(type) {
+  document.querySelectorAll(".row").forEach(r => {
+    r.classList.toggle("active", r.dataset.type === type);
+  });
+}
+
+function buildBreadcrumb(snippet) {
+  if (!snippet || !snippet.module) return "";
+  const parts = snippet.module.split(".");
+  const app = parts[0];
+  const flow = parts[1] || "";
+  const screen = snippet.screen || "Global";
+  const action = parts[parts.length - 1];
+  return `${app} / ${flow} / ${screen} / ${action}`;
+}
+
+/**
+ * Remove trailing OutSystems closure `};`
+ */
+function normalizeCode(code) {
+  return code.replace(/\}\s*;\s*$/, "").trim();
+}
+
+/* =====================================================
+   RENDER
+===================================================== */
+function render(type) {
+  const items = groups[type];
+  activeSnippet = null;
+
+  if (!items || items.length === 0) {
+    editor.setValue(`// No JS found for ${type}`);
+    breadcrumbEl.textContent = "";
+    status.textContent = `No JS found for ${type}`;
+    activateTab(type);
+    return;
+  }
+
+  activeSnippet = items[0];
+
+  editor.setValue(activeSnippet.code);
+  breadcrumbEl.textContent = buildBreadcrumb(activeSnippet);
+  status.textContent = `Loaded ${type}`;
+  activateTab(type);
+}
+
+/* =====================================================
+   LOAD SNIPPETS FROM PAGE
+===================================================== */
 chrome.devtools.inspectedWindow.eval(
   "window.__OS_DEBUGGER__ && window.__OS_DEBUGGER__.getAll()",
   result => {
-    if (Array.isArray(result)) {
-      result.forEach(addSnippet);
+    if (!Array.isArray(result)) {
+      editor.setValue("// No JS found");
+      status.textContent = "Debugger not initialized";
+      return;
     }
+
+    allSnippets = result;
+
+    const screenSnippet = allSnippets.find(s => s.screen);
+    currentScreen = screenSnippet ? screenSnippet.screen : null;
+
+    Object.keys(groups).forEach(k => (groups[k] = []));
+
+    allSnippets
+      .filter(s => s.screen === currentScreen || s.screen === null)
+      .forEach(s => {
+        groups[classify(s)].push(s);
+      });
+
+    if (groups.OnReady.length) render("OnReady");
+    else if (groups.OnInitialize.length) render("OnInitialize");
+    else if (groups.OnAfterFetch.length) render("OnAfterFetch");
+    else render("Others");
   }
 );
 
-/* =========================================================
-   Live updates
-========================================================= */
-const port = chrome.runtime.connect({ name: "devtools" });
-port.onMessage.addListener(msg => {
-  if (msg.action === "snippet") {
-    addSnippet(msg.payload);
-  }
+/* =====================================================
+   TAB CLICK
+===================================================== */
+document.querySelectorAll(".row").forEach(row => {
+  row.onclick = () => render(row.dataset.type);
 });
 
-/* =========================================================
-   Store snippet
-========================================================= */
-function addSnippet(snippet) {
-  const group = groups[snippet.lifecycle] || groups.Others;
-  group.push(snippet);
-}
-
-/* =========================================================
-   Lifecycle tab click
-========================================================= */
-const rows = document.querySelectorAll(".row");
-
-rows.forEach(row => {
-  row.onclick = () => {
-    rows.forEach(r => r.classList.remove("active"));
-    row.classList.add("active");
-    render(row.dataset.type);
-  };
-});
-
-/* =========================================================
-   Render snippet
-========================================================= */
-function render(type) {
-  const items = groups[type];
-  if (!items || items.length === 0) {
-    editor.setValue("// No JS found");
+/* =====================================================
+   RUN (EDIT & TEST)
+===================================================== */
+runBtn.onclick = () => {
+  if (!activeSnippet) {
+    status.textContent = "No snippet selected";
     return;
   }
 
-  const s = items[0];
-  currentSnippet = s;
-
-  const b = s.breadcrumb;
-
-  editor.setValue(
-`// ${b.app} / ${b.module} / ${b.flow} / ${b.screen} / ${b.action}
-
-${s.code}`
-  );
-
-  originalCode = editor.getValue();
-  status.textContent = "";
-}
-
-/* =========================================================
-   ▶ Run (re-run logic)
-========================================================= */
-runBtn.onclick = () => {
-  if (!currentSnippet) return;
+  const code = normalizeCode(editor.getValue());
 
   chrome.devtools.inspectedWindow.eval(
-    `(function(){ ${editor.getValue()} })();`,
-    (_, err) => {
-      status.textContent = err ? "❌ Error" : "✅ Executed";
+    `(function(){ ${code} })();`,
+    () => {
+      status.textContent = "Executed (check Console)";
     }
   );
 };
 
-/* =========================================================
-   🐞 Debug (REAL behavior)
-========================================================= */
-debugBtn.onclick = () => {
-  if (!currentSnippet) return;
+/* =====================================================
+   RESET
+===================================================== */
+resetBtn.onclick = () => {
+  if (!activeSnippet) return;
+  editor.setValue(activeSnippet.code);
+  status.textContent = "Snippet reset";
+};
 
-  // Event-driven JS → patch and wait for click
-  if (currentSnippet.lifecycle === "OnClick") {
-    chrome.devtools.inspectedWindow.eval(
-      `window.__OS_DEBUGGER__.patchEvent("${currentSnippet.actionName}")`,
-      result => {
-        status.textContent = result
-          ? "⏸ Click the button to debug"
-          : "❌ Event not found";
-      }
-    );
+/* =====================================================
+   NAVIGATE TO SOURCE (FIXED – NO CLIPBOARD)
+===================================================== */
+breadcrumbLink.onclick = () => {
+  if (!activeSnippet) {
+    status.textContent = "No snippet selected";
     return;
   }
 
-  // Immediate lifecycles → pause now
   chrome.devtools.inspectedWindow.eval(
-    `(function(){ debugger; ${editor.getValue()} })();`
+    `(function() {
+      return Array.from(document.scripts)
+        .map(s => s.src)
+        .filter(Boolean);
+    })();`,
+    (scripts) => {
+      if (!Array.isArray(scripts)) {
+        status.textContent = "Unable to inspect loaded scripts";
+        return;
+      }
+
+      const marker = ".mvc$controller";
+      const idx = activeSnippet.module.indexOf(marker);
+      if (idx === -1) {
+        status.textContent = "Not a screen MVC JS";
+        return;
+      }
+
+      const app = activeSnippet.module.split(".")[0];
+      const screenPath = activeSnippet.module.substring(0, idx);
+      const expected = `/${app}/scripts/${screenPath}.mvc.js`;
+
+      // Find real compiled JS (with cache key)
+      const realUrl = scripts.find(src => src.includes(expected));
+
+      if (!realUrl) {
+        status.textContent = "Compiled JS file not found in page";
+        return;
+      }
+
+      chrome.devtools.panels.openResource(realUrl, 0);
+
+      // 🔴 Clipboard removed – show guidance instead
+      status.textContent =
+        `Source opened. In Sources tab press Ctrl+F and search:\n` +
+        `define("${activeSnippet.module}")`;
+    }
   );
-
-  status.textContent = "⏸ Debugging";
-};
-
-/* =========================================================
-   ↩ Reset
-========================================================= */
-resetBtn.onclick = () => {
-  editor.setValue(originalCode);
-  status.textContent = "↩ Reset";
 };

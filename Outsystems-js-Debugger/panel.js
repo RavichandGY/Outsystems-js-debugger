@@ -1,214 +1,222 @@
 /*!
- * OutSystems JS Debugger
+ * OutSystems JS Debugger – Page Hook
  * Copyright (c) 2025 RavichandGY
  * All rights reserved.
  */
 
-/* =====================================================
-   STATE
-===================================================== */
-const groups = {
-  OnInitialize: [],
-  OnReady: [],
-  OnRender: [],
-  OnAfterFetch: [],
-  Others: []
-};
+const LIFECYCLES = ["OnInitialize", "OnReady", "OnRender", "OnAfterFetch", "Others"];
 
-let allSnippets = [];
-let currentScreen = null;
-let activeSnippet = null;
-
-/* =====================================================
-   UI ELEMENTS (MATCH HTML EXACTLY)
-===================================================== */
-const status = document.getElementById("status");
-const breadcrumbEl = document.getElementById("breadcrumb");
-const breadcrumbLink = document.getElementById("breadcrumb-action");
-const runBtn = document.getElementById("run");
-const resetBtn = document.getElementById("reset");
-
-/* =====================================================
-   CODEMIRROR
-===================================================== */
+const listEl = document.getElementById("list");
+const searchEl = document.getElementById("search");
 const editor = CodeMirror(document.getElementById("editor"), {
   mode: "javascript",
-  lineNumbers: true,
-  indentUnit: 2,
-  tabSize: 2
+  lineNumbers: true
 });
 
-/* =====================================================
-   HELPERS
-===================================================== */
-function classify(snippet) {
-  const n = snippet.module || "";
-  if (n.includes(".OnInitialize.")) return "OnInitialize";
-  if (n.includes(".OnReady.")) return "OnReady";
-  if (n.includes(".OnRender.")) return "OnRender";
-  if (n.includes("OnAfterFetch")) return "OnAfterFetch";
+const breadcrumbEl = document.getElementById("breadcrumb");
+const statusEl = document.getElementById("status");
+const runBtn = document.getElementById("run");
+const resetBtn = document.getElementById("reset");
+const breadcrumbAction = document.getElementById("breadcrumb-action");
+
+let allSnippets = [];
+let activeSnippet = null;
+let currentScreen = null;
+
+/* ============ HELPERS ============ */
+function classifyLifecycle(name = "") {
+  if (name.includes(".OnInitialize.")) return "OnInitialize";
+  if (name.includes(".OnReady.")) return "OnReady";
+  if (name.includes(".OnRender.")) return "OnRender";
+  if (name.includes("OnAfterFetch")) return "OnAfterFetch";
   return "Others";
 }
 
-function activateTab(type) {
-  document.querySelectorAll(".row").forEach(r => {
-    r.classList.toggle("active", r.dataset.type === type);
-  });
+function extractController(module) {
+  const p = module.split(".");
+  const idx = p.indexOf("mvc$controller");
+  return idx > 0 ? p[idx - 1] : null;
 }
 
-function buildBreadcrumb(snippet) {
-  if (!snippet || !snippet.module) return "";
-  const parts = snippet.module.split(".");
-  const app = parts[0];
-  const flow = parts[1] || "";
-  const screen = snippet.screen || "Global";
-  const action = parts[parts.length - 1];
-  return `${app} / ${flow} / ${screen} / ${action}`;
-}
-
-/**
- * Remove trailing OutSystems closure `};`
- */
 function normalizeCode(code) {
   return code.replace(/\}\s*;\s*$/, "").trim();
 }
 
-/* =====================================================
-   RENDER
-===================================================== */
-function render(type) {
-  const items = groups[type];
-  activeSnippet = null;
-
-  if (!items || items.length === 0) {
-    editor.setValue(`// No JS found for ${type}`);
-    breadcrumbEl.textContent = "";
-    status.textContent = `No JS found for ${type}`;
-    activateTab(type);
-    return;
-  }
-
-  activeSnippet = items[0];
-
-  editor.setValue(activeSnippet.code);
-  breadcrumbEl.textContent = buildBreadcrumb(activeSnippet);
-  status.textContent = `Loaded ${type}`;
-  activateTab(type);
+function buildBreadcrumb(s) {
+  const p = s.module.split(".");
+  return `${p[0]} / ${p[1]} / ${s.owner} / ${p.at(-1)}`;
 }
 
-/* =====================================================
-   LOAD SNIPPETS FROM PAGE
-===================================================== */
+function clearSelection() {
+  document.querySelectorAll(".tree-selected").forEach(el =>
+    el.classList.remove("tree-selected")
+  );
+}
+
+/* ============ TREE NODE ============ */
+function createNode(label, count, onClick, isParent = false) {
+  const node = document.createElement("div");
+  node.className = "tree-node";
+
+  const labelEl = document.createElement("div");
+  labelEl.className = "tree-label" + (isParent ? " tree-parent" : "");
+
+  const arrow = document.createElement("span");
+  arrow.className = "tree-arrow";
+
+  const text = document.createElement("span");
+  text.textContent = label;
+
+  const countEl = document.createElement("span");
+  countEl.className = "count";
+  countEl.textContent = count !== null ? count : "";
+
+  labelEl.append(arrow, text, countEl);
+  node.appendChild(labelEl);
+
+  const children = document.createElement("div");
+  children.className = "tree-children";
+  node.appendChild(children);
+
+  labelEl.onclick = e => {
+    e.stopPropagation();
+    node.classList.toggle("open");
+    if (onClick) onClick(labelEl);
+  };
+
+  return { node, children, labelEl };
+}
+
+/* ============ RENDER TREE ============ */
+function renderTree(snippets) {
+  listEl.innerHTML = "";
+
+  const screenNode = createNode(`Screen: ${currentScreen}`, null, null, true);
+  listEl.appendChild(screenNode.node);
+
+  const screenLife = {};
+  const blocks = {};
+  LIFECYCLES.forEach(l => (screenLife[l] = []));
+
+  snippets.forEach(s => {
+    const lc = classifyLifecycle(s.module);
+    const owner = extractController(s.module);
+    if (!owner) return;
+
+    if (owner === currentScreen) {
+      s.owner = currentScreen;
+      screenLife[lc].push(s);
+    } else {
+      s.owner = owner;
+      blocks[owner] ??= {};
+      LIFECYCLES.forEach(l => (blocks[owner][l] ??= []));
+      blocks[owner][lc].push(s);
+    }
+  });
+
+  // Screen lifecycles
+  LIFECYCLES.forEach(lc => {
+    const list = screenLife[lc];
+    const lcNode = createNode(lc, list.length, null, true);
+    screenNode.children.appendChild(lcNode.node);
+
+    list.forEach(s => {
+      const jsNode = createNode(
+        s.module.split(".").at(-1),
+        null,
+        labelEl => {
+          clearSelection();
+          labelEl.classList.add("tree-selected");
+          activeSnippet = s;
+          editor.setValue(s.code);
+          breadcrumbEl.textContent = buildBreadcrumb(s);
+          statusEl.textContent = "JS loaded";
+        }
+      );
+      lcNode.children.appendChild(jsNode.node);
+    });
+  });
+
+  // Web Blocks
+  const wbNode = createNode("Web Blocks", null, null, true);
+  screenNode.children.appendChild(wbNode.node);
+
+  Object.keys(blocks).sort().forEach(block => {
+    const blockNode = createNode(block, null, null, true);
+    wbNode.children.appendChild(blockNode.node);
+
+    LIFECYCLES.forEach(lc => {
+      const list = blocks[block][lc];
+      const lcNode = createNode(lc, list.length, null, true);
+      blockNode.children.appendChild(lcNode.node);
+
+      list.forEach(s => {
+        const jsNode = createNode(
+          s.module.split(".").at(-1),
+          null,
+          labelEl => {
+            clearSelection();
+            labelEl.classList.add("tree-selected");
+            activeSnippet = s;
+            editor.setValue(s.code);
+            breadcrumbEl.textContent = buildBreadcrumb(s);
+            statusEl.textContent = "JS loaded";
+          }
+        );
+        lcNode.children.appendChild(jsNode.node);
+      });
+    });
+  });
+}
+
+/* ============ SEARCH ============ */
+searchEl.oninput = () => {
+  const q = searchEl.value.toLowerCase();
+  document.querySelectorAll(".tree-node").forEach(n => {
+    const txt = n.textContent.toLowerCase();
+    n.style.display = txt.includes(q) ? "" : "none";
+    if (q && txt.includes(q)) n.classList.add("open");
+  });
+};
+
+/* ============ LOAD ============ */
 chrome.devtools.inspectedWindow.eval(
   "window.__OS_DEBUGGER__ && window.__OS_DEBUGGER__.getAll()",
-  result => {
-    if (!Array.isArray(result)) {
-      editor.setValue("// No JS found");
-      status.textContent = "Debugger not initialized";
-      return;
-    }
-
-    allSnippets = result;
-
-    const screenSnippet = allSnippets.find(s => s.screen);
-    currentScreen = screenSnippet ? screenSnippet.screen : null;
-
-    Object.keys(groups).forEach(k => (groups[k] = []));
-
-    allSnippets
-      .filter(s => s.screen === currentScreen || s.screen === null)
-      .forEach(s => {
-        groups[classify(s)].push(s);
-      });
-
-    if (groups.OnReady.length) render("OnReady");
-    else if (groups.OnInitialize.length) render("OnInitialize");
-    else if (groups.OnAfterFetch.length) render("OnAfterFetch");
-    else render("Others");
+  res => {
+    if (!Array.isArray(res)) return;
+    allSnippets = res;
+    currentScreen = res.find(s => s.screen)?.screen || "Screen";
+    renderTree(allSnippets);
   }
 );
 
-/* =====================================================
-   TAB CLICK
-===================================================== */
-document.querySelectorAll(".row").forEach(row => {
-  row.onclick = () => render(row.dataset.type);
-});
-
-/* =====================================================
-   RUN (EDIT & TEST)
-===================================================== */
+/* ============ RUN / RESET ============ */
 runBtn.onclick = () => {
-  if (!activeSnippet) {
-    status.textContent = "No snippet selected";
-    return;
-  }
-
-  const code = normalizeCode(editor.getValue());
-
+  if (!activeSnippet) return;
   chrome.devtools.inspectedWindow.eval(
-    `(function(){ ${code} })();`,
-    () => {
-      status.textContent = "Executed (check Console)";
-    }
+    `(function(){ ${normalizeCode(editor.getValue())} })();`
   );
 };
 
-/* =====================================================
-   RESET
-===================================================== */
 resetBtn.onclick = () => {
-  if (!activeSnippet) return;
-  editor.setValue(activeSnippet.code);
-  status.textContent = "Snippet reset";
+  if (activeSnippet) editor.setValue(activeSnippet.code);
 };
 
-/* =====================================================
-   NAVIGATE TO SOURCE (FIXED – NO CLIPBOARD)
-===================================================== */
-breadcrumbLink.onclick = () => {
-  if (!activeSnippet) {
-    status.textContent = "No snippet selected";
-    return;
-  }
+/* ============ SOURCE NAVIGATION ============ */
+breadcrumbAction.onclick = () => {
+  if (!activeSnippet) return;
 
   chrome.devtools.inspectedWindow.eval(
-    `(function() {
-      return Array.from(document.scripts)
-        .map(s => s.src)
-        .filter(Boolean);
-    })();`,
-    (scripts) => {
-      if (!Array.isArray(scripts)) {
-        status.textContent = "Unable to inspect loaded scripts";
-        return;
-      }
-
-      const marker = ".mvc$controller";
-      const idx = activeSnippet.module.indexOf(marker);
-      if (idx === -1) {
-        status.textContent = "Not a screen MVC JS";
-        return;
-      }
+    `Array.from(document.scripts).map(s => s.src).filter(Boolean);`,
+    scripts => {
+      const idx = activeSnippet.module.indexOf(".mvc$controller");
+      if (idx === -1) return;
 
       const app = activeSnippet.module.split(".")[0];
       const screenPath = activeSnippet.module.substring(0, idx);
       const expected = `/${app}/scripts/${screenPath}.mvc.js`;
-
-      // Find real compiled JS (with cache key)
-      const realUrl = scripts.find(src => src.includes(expected));
-
-      if (!realUrl) {
-        status.textContent = "Compiled JS file not found in page";
-        return;
-      }
-
-      chrome.devtools.panels.openResource(realUrl, 0);
-
-      // 🔴 Clipboard removed – show guidance instead
-      status.textContent =
-        `Source opened. In Sources tab press Ctrl+F and search:\n` +
-        `define("${activeSnippet.module}")`;
+      const url = scripts.find(s => s.includes(expected));
+      if (url) chrome.devtools.panels.openResource(url, 0);
     }
   );
 };

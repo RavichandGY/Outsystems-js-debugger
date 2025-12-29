@@ -1,9 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <link rel="stylesheet" href="lib/codemirror.css">
-  <link rel="stylesheet" href="lib/foldgutter.css">
+  <meta charset="utf-8" />
+  <title>OutSystems JS Debugger</title>
+
+  <link rel="stylesheet" href="lib/codemirror.css" />
 
   <style>
     body {
@@ -15,123 +16,153 @@
 
     #layout {
       display: grid;
-      grid-template-columns: 200px 1fr;
+      grid-template-columns: 320px 1fr;
       height: 100vh;
-      overflow: hidden;
     }
 
-    /* ================= LEFT PANEL ================= */
-    #list {
+    /* ============ LEFT PANEL ============ */
+    #left {
+      display: flex;
+      flex-direction: column;
       border-right: 1px solid #ccc;
+      background: #fafafa;
+      min-height: 0; /* REQUIRED */
+    }
+
+    #search {
+      padding: 6px 8px;
+      border: none;
+      border-bottom: 1px solid #ccc;
+      font-family: monospace;
+      font-size: 13px;
+      outline: none;
+    }
+
+    #list {
+      flex: 1;
       overflow-y: auto;
+      min-height: 0;
+    }
+
+    /* ============ TREE ============ */
+    .tree-node {
       position: relative;
-      z-index: 100;
+      padding-left: 16px;
     }
 
-    .row {
-      padding: 10px;
-      font-weight: bold;
+    .tree-node::before {
+      content: "";
+      position: absolute;
+      left: 7px;
+      top: 0;
+      bottom: 0;
+      border-left: 1px dashed #bbb;
+    }
+
+    .tree-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       cursor: pointer;
-      border-bottom: 1px solid #eee;
+      padding: 3px 4px;
+      border-radius: 4px;
+      user-select: none;
+      white-space: nowrap;
     }
 
-    .row:hover {
-      background: #f0f0f0;
+    .tree-label:hover {
+      background: #eef3ff;
     }
 
-    .row.active {
-      background: #e6f0ff;
+    .tree-arrow {
+      width: 12px;
+      font-size: 10px;
+      color: #555;
+      text-align: center;
+    }
+
+    .tree-node.open > .tree-label .tree-arrow::before {
+      content: "▼";
+    }
+
+    .tree-label .tree-arrow::before {
+      content: "▶";
+    }
+
+    .tree-children {
+      display: none;
+      margin-left: 12px;
+    }
+
+    .tree-node.open > .tree-children {
+      display: block;
+    }
+
+    .tree-parent {
+      font-weight: bold;
+    }
+
+    .tree-js {
+      padding-left: 12px;
+    }
+
+    .tree-selected {
+      background: #dbe9ff !important;
       color: #0b5fff;
-      border-left: 4px solid #0b5fff;
     }
 
-    .row.active:hover {
-      background: #dbe9ff;
+    .count {
+      margin-left: auto;
+      font-size: 11px;
+      color: #777;
     }
 
-    /* ================= RIGHT PANEL ================= */
+    /* ============ RIGHT PANEL ============ */
     #right {
       display: flex;
       flex-direction: column;
       height: 100%;
       min-height: 0;
-      overflow: hidden;
     }
 
-    /* Toolbar */
     #toolbar {
       padding: 6px;
       border-bottom: 1px solid #ccc;
       background: #fafafa;
       display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
+      gap: 8px;
     }
 
-    #status {
-      margin-left: 10px;
-      font-weight: bold;
-    }
-
-    /* ================= BREADCRUMB BAR ================= */
     #breadcrumb-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
       padding: 6px 10px;
-      font-size: 12px;
-      color: #555;
       border-bottom: 1px solid #ddd;
-      background: #fff;
-      flex-shrink: 0;
-    }
-
-    #breadcrumb {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
     }
 
     #breadcrumb-action {
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 6px;
       color: #0b5fff;
-      user-select: none;
     }
 
-    #breadcrumb-action:hover {
-      text-decoration: underline;
-    }
-
-    /* ================= EDITOR ================= */
     #editor {
       flex: 1;
       min-height: 0;
-      position: relative;
-      overflow: hidden;
     }
 
     .CodeMirror {
       height: 100% !important;
+      font-size: 13px;
     }
 
-    /* ================= FOOTER ================= */
     #footer {
       font-size: 11px;
-      padding: 4px 8px;
+      padding: 4px;
       border-top: 1px solid #ddd;
       text-align: center;
       color: #666;
       background: #fafafa;
-      flex-shrink: 0;
-    }
-
-    /* Error highlight */
-    .cm-error-line {
-      background: rgba(255, 0, 0, 0.15);
     }
   </style>
 </head>
@@ -139,58 +170,33 @@
 <body>
   <div id="layout">
 
-    <!-- ================= LEFT PANEL ================= -->
-    <div id="list">
-      <div class="row" data-type="OnInitialize">OnInitialize</div>
-      <div class="row" data-type="OnReady">OnReady</div>
-      <div class="row" data-type="OnRender">OnRender</div>
-      <div class="row" data-type="OnAfterFetch">OnAfterFetch</div>
-      <div class="row" data-type="Others">Others</div>
+    <div id="left">
+      <input id="search" placeholder="Search screens, blocks, JS…" />
+      <div id="list"></div>
     </div>
 
-    <!-- ================= RIGHT PANEL ================= -->
     <div id="right">
-
-      <!-- TOOLBAR -->
       <div id="toolbar">
         <button id="run">▶ Run</button>
         <button id="reset">↩ Reset</button>
         <span id="status"></span>
       </div>
 
-      <!-- BREADCRUMB BAR -->
       <div id="breadcrumb-bar">
         <div id="breadcrumb"></div>
-        <div id="breadcrumb-action" title="Navigate to source file">
-          🔗 <span>Navigate to source file</span>
-        </div>
+        <div id="breadcrumb-action">Open source</div>
       </div>
 
-      <!-- EDITOR -->
       <div id="editor"></div>
 
-      <!-- FOOTER -->
       <div id="footer">
-        © 2025 Ravichand GY · OutSystems JS Debugger · All rights reserved
+        © 2025 Ravichand GY · OutSystems JS Debugger v1.2.0
       </div>
     </div>
-
   </div>
 
-  <!-- ================= SCRIPTS ================= -->
-
-  <!-- CodeMirror core -->
   <script src="lib/codemirror.js"></script>
-
-  <!-- Language -->
   <script src="lib/javascript.js"></script>
-
-  <!-- Folding -->
-  <script src="lib/foldcode.js"></script>
-  <script src="lib/foldgutter.js"></script>
-  <script src="lib/brace-fold.js"></script>
-
-  <!-- Panel logic -->
   <script src="panel.js"></script>
 </body>
 </html>

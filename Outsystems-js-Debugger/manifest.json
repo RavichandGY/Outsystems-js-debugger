@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "OutSystems JS Debugger",
-  "version": "1.0",
+  "version": "1.2.0",
   "description": "Live debug and test developer-written JavaScript in OutSystems lifecycle events",
 
   "icons": {
